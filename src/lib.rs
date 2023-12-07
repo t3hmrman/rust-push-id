@@ -1,18 +1,36 @@
 extern crate rand;
 
 use rand::Rng;
+use std::collections::HashMap;
+use std::convert::TryInto;
+use std::sync::OnceLock;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const PUSH_CHARS: &str = "-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz";
+
+static CHAR_INDEX_LOOKUP: OnceLock<HashMap<char, usize>> = OnceLock::new();
+fn get_char_idx_lookup() -> &'static HashMap<char, usize> {
+    CHAR_INDEX_LOOKUP.get_or_init(|| {
+        PUSH_CHARS
+            .chars()
+            .enumerate()
+            .fold(HashMap::new(), |mut acc, (idx, c)| {
+                acc.insert(c, idx);
+                acc
+            })
+    })
+}
 
 pub trait PushIdGen {
     fn get_id(&mut self) -> String;
 }
 
 pub struct PushId {
-    /// Seconds since the UNIX epoch
+    /// Timestamp of the last Push
     last_time: u64,
+
+    /// Bytes of randomness used to prevent collisions with other characters
     previous_indices: [usize; 12],
 }
 
@@ -86,6 +104,71 @@ impl PushId {
     /// Get the milliseconds since UNIX epoch for the PushId
     pub fn last_time_millis(&self) -> u64 {
         self.last_time.into()
+    }
+
+    /// Create a PushID from a given string
+    pub fn from_str(s: impl AsRef<str>) -> Result<Self, std::io::Error> {
+        let s = s.as_ref();
+        if s.len() < 20 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("PushID [{s}] has invalid length"),
+            ));
+        }
+
+        // Split into timestamp and randomness
+        let (timestamp_bytes, randomness_bytes) = s.split_at(8);
+
+        // Generate static lookup of characters to their values
+        let char_idx_lookup = get_char_idx_lookup();
+
+        // Convert timestamp bytes into a u64, by using the indices
+        let timestamp_bytes_vec: Vec<u8> = Vec::new();
+        for (idx, c) in timestamp_bytes.chars().rev().enumerate() {
+            let value = match char_idx_lookup.get(&c) {
+                Some(v) => v * (64 ^ idx), // TODO: THIS IS WRONG?
+                None => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("failed to convert: {e}"),
+                    ))
+                }
+            };
+            timestamp_bytes_vec.push(value);
+        }
+        let timestamp_bytes: [u8; 8] = timestamp_bytes_vec.try_into().map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("failed to convert vec to [u8;8]"),
+            )
+        })?;
+        let last_time = u64::from_le_bytes(timestamp_bytes);
+
+        // Convert randomness into previous_indices member
+        let other_indices = Vec::new();
+        for c in other_indices.iter() {
+            let idx = match char_idx_lookup.get(&c) {
+                Some(v) => v * 64, // TODO: THIS IS WRONG
+                None => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("failed to convert: {e}"),
+                    ))
+                }
+            };
+            other_indices.push(idx as usize);
+        }
+        let previous_indices: [usize; 12] = other_indices.try_into().map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("failed to remaining randomness into 12 bytes of indices"),
+            )
+        })?;
+
+        Ok(Self {
+            last_time,
+            previous_indices,
+        })
     }
 }
 
