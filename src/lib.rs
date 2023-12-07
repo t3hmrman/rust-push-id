@@ -1,3 +1,13 @@
+//! Firebase-style PushId generation
+//!
+//! This crate generates PushIds as specified/discussed in the [Firebase blog post](https://www.firebase.com/blog/2015-02-11-firebase-unique-identifiers.html)- introduced in 2015.
+//!
+//! Other implementations that served as inspiration:
+//! - https://github.com/jengjeng/firebase-pushid-convert-timestamp
+//! - https://github.com/alexdrone/PushID
+//! - https://github.com/Darkwolf/node-pushid
+//! - https://github.com/zerklabs/pushid
+
 extern crate rand;
 
 use rand::Rng;
